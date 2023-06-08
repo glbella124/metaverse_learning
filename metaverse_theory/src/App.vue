@@ -3,10 +3,9 @@
 </template>
 
 <script setup>
-
 /**
- * 元宇宙物理环境搭建 
- * 
+ * 元宇宙物理环境搭建
+ *
  * 元宇宙碰撞检测实现
  */
 import * as THREE from "three";
@@ -28,7 +27,6 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LightningStorm } from "three/examples/jsm/objects/LightningStorm.js";
 
 import { reactive, onMounted, ref } from "vue";
-import fragmentShader from "./shader/fragmentShader.glsl";
 
 onMounted(() => {
   const clock = new THREE.Clock();
@@ -91,7 +89,15 @@ onMounted(() => {
   scene.add(plane);
 
   // 创建一个octree -- 世界空间
+  // 创建一个地面组
+  const group = new THREE.Group();
+  // 将平面添加到组里面
+  group.add(plane);
+  scene.add(group);
   const worldOctree = new Octree();
+  // 将八叉树划分
+  worldOctree.fromGraphNode(group);
+
   // 创建一个人的碰撞体
   const playerCollider = new Capsule(
     // 人底部，0.35半径 -- 起点
@@ -121,10 +127,18 @@ onMounted(() => {
   const playerVelocity = new THREE.Vector3(0, 0, 0);
   // 方向向量
   const playerDirection = new THREE.Vector3(0, 0, 0);
+  // 用于判断玩家是否在地面上
+  let playerIsOnFloor = false;
 
   // 每一帧都需要更新玩家的状态 -- 延迟时间
   function updatePlayer(deltaTime) {
-    playerVelocity.y += gravity * deltaTime;
+    if (playerIsOnFloor) {
+      // 在地面上的话，不设置重力加速度
+      playerVelocity.y = 0;
+    } else {
+      playerVelocity.y += gravity * deltaTime;
+    }
+
     // console.log(playerVelocity);
     // 计算玩家移动的距离
     const playerMoveDistance = playerVelocity.clone().multiplyScalar(deltaTime);
@@ -132,6 +146,24 @@ onMounted(() => {
     playerCollider.translate(playerMoveDistance);
     // 设置胶囊位置 -- 传入一个三维向量
     playerCollider.getCenter(capsule.position);
+
+    // 进行碰撞检测
+    playerCollisions();
+  }
+
+  // 玩家碰撞检测
+  function playerCollisions() {
+    const result = worldOctree.capsuleIntersect(playerCollider);
+    playerIsOnFloor = false;
+    if (result) {
+      // 由于速度太快，尽管有抬升，依然在持续下降
+      // 法向向量向上的时候，设置为true
+      playerIsOnFloor = result.normal.y > 0;
+      // 方向 * 陷进去的深度
+      playerCollider.translate(result.normal.multiplyScalar(result.depth));
+    }
+    // 碰撞到的话可以获取一个向量
+    // console.log(result);
   }
 
   // 重置 -- 从天上往下掉
