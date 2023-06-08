@@ -68,6 +68,7 @@ onMounted(() => {
 
   function animate() {
     let delta = clock.getDelta();
+    controlPlayer(delta);
     updatePlayer(delta);
     resetPlayer();
     stats.update();
@@ -127,14 +128,30 @@ onMounted(() => {
   const playerVelocity = new THREE.Vector3(0, 0, 0);
   // 方向向量
   const playerDirection = new THREE.Vector3(0, 0, 0);
+
+  // 键盘按下事件
+  const keyStates = {
+    KeyW: false,
+    KeyA: false,
+    KeyS: false,
+    keyD: false,
+    Space: false,
+    isDown: false,
+  };
   // 用于判断玩家是否在地面上
   let playerIsOnFloor = false;
 
   // 每一帧都需要更新玩家的状态 -- 延迟时间
   function updatePlayer(deltaTime) {
+    let damping = -0.05;
     if (playerIsOnFloor) {
       // 在地面上的话，不设置重力加速度
       playerVelocity.y = 0;
+      // 添加反方向的力 -- 阻尼 -- 向量计算
+      // addScaledVector -- 将所传入的v 与s相乘所得的乘积和这个向量相加
+      // 反方向的摩擦力 -- 键盘未按下时执行
+      keyStates.isDown ||
+        playerVelocity.addScaledVector(playerVelocity, damping);
     } else {
       playerVelocity.y += gravity * deltaTime;
     }
@@ -175,6 +192,40 @@ onMounted(() => {
       // 速度和方向需要恢复
       playerVelocity.set(0, 0, 0);
       playerDirection.set(0, 0, 0);
+    }
+  }
+
+  // 监听键盘按下的事件
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      console.log(event.code);
+      keyStates[event.code] = true;
+      keyStates.isDown = true;
+    },
+    false
+  );
+
+  // 监听键盘抬起的事件
+  document.addEventListener(
+    "keyup",
+    (event) => {
+      keyStates[event.code] = false;
+      keyStates.isDown = false;
+    },
+    false
+  );
+
+  // 根据键盘状态更新玩家的速度
+  function controlPlayer(deltaTime) {
+    if (keyStates["KeyW"]) {
+      playerDirection.z = 1;
+      // 获取胶囊的正前面方向
+      const capsuleFront = new THREE.Vector3(0, 0, 1);
+      capsule.getWorldDirection(capsuleFront);
+      // console.log(capsuleFront, "获取胶囊的正前方方向");
+      // 计算玩家的速度
+      playerVelocity.add(capsuleFront.multiplyScalar(deltaTime));
     }
   }
 
