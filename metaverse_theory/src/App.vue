@@ -4,9 +4,13 @@
 
 <script setup>
 /**
- * 元宇宙物理环境搭建
+ * 1. 元宇宙物理环境搭建
  *
- * 元宇宙碰撞检测实现
+ * 2. 元宇宙碰撞检测实现
+ *
+ * 3. 控制物体运动阻尼
+ *
+ * 4. 运用叉积控制左右水平运动
  */
 import * as THREE from "three";
 import Stats from "three/examples/jsm/libs/stats.module.js";
@@ -43,6 +47,16 @@ onMounted(() => {
   );
   camera.position.set(0, 5, 10);
 
+  // 后置摄像头
+  const backCamera = new THREE.PerspectiveCamera(
+    70,
+    window.innerWidth / window.innerHeight,
+    0.001,
+    1000
+  );
+
+  camera.position.set(0, 5, -10);
+
   const container = document.getElementById("container");
 
   // 渲染器渲染
@@ -61,10 +75,13 @@ onMounted(() => {
   container.appendChild(stats.domElement);
 
   // 控制器
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(0, 0, 0);
+  // const controls = new OrbitControls(camera, renderer.domElement);
+  // controls.target.set(0, 0, 0);
 
   // console.log(renderer.info);
+
+  // 设置激活相机，以便切换视角
+  let activeCamera = camera;
 
   function animate() {
     let delta = clock.getDelta();
@@ -72,8 +89,8 @@ onMounted(() => {
     updatePlayer(delta);
     resetPlayer();
     stats.update();
-    controls.update();
-    renderer.render(scene, camera);
+    // controls.update();
+    renderer.render(scene, activeCamera);
     requestAnimationFrame(animate);
   }
 
@@ -87,7 +104,16 @@ onMounted(() => {
   const plane = new THREE.Mesh(planeGeometry, planeMaterial);
   plane.receiveShadow = true;
   plane.rotation.x = -Math.PI / 2;
-  scene.add(plane);
+
+  // 循环创建叠楼梯效果
+  for (let i = 0; i < 8; i++) {
+    const boxGeometry = new THREE.BoxGeometry(1, 1, 0.15);
+    const boxMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    const box = new THREE.Mesh(boxGeometry, boxMaterial);
+    box.position.y = 0.15 + i * 0.15;
+    box.position.z = i * 0.4;
+    plane.add(box);
+  }
 
   // 创建一个octree -- 世界空间
   // 创建一个地面组
@@ -98,6 +124,10 @@ onMounted(() => {
   const worldOctree = new Octree();
   // 将八叉树划分
   worldOctree.fromGraphNode(group);
+
+  // 创建一个octreeHelper
+  // const octreeHelper = new OctreeHelper(worldOctree);
+  // scene.add(octreeHelper);
 
   // 创建一个人的碰撞体
   const playerCollider = new Capsule(
@@ -111,6 +141,15 @@ onMounted(() => {
   // console.log(playerCollider);
   // console.log(worldOctree);
 
+  // 创建一个平面
+  const capsuleBodyGeometry = new THREE.PlaneGeometry(1, 0.5, 1, 1);
+  const capsuleBodyMaterial = new THREE.MeshBasicMaterial({
+    color: 0x0000ff,
+    side: THREE.DoubleSide,
+  });
+  const capsuleBody = new THREE.Mesh(capsuleBodyGeometry, capsuleBodyMaterial);
+  capsuleBody.position.set(0, 0.5, 0);
+
   // 创建一个胶囊物体
   const capsuleGeometry = new THREE.CapsuleGeometry(0.35, 1, 32);
   const capsuleMaterial = new THREE.MeshBasicMaterial({
@@ -120,6 +159,23 @@ onMounted(() => {
 
   const capsule = new THREE.Mesh(capsuleGeometry, capsuleMaterial);
   capsule.position.set(0, 0.85, 0);
+
+  // 将相机作为胶囊的子元素，就可以实现跟随
+  camera.position.set(0, 2, -5);
+  camera.lookAt(capsule.position);
+
+  // 为切换视角，相机需要初始化
+  backCamera.position.set(0, 2, 5);
+  backCamera.lookAt(capsule.position);
+  // controls.target = capsule.position;
+  // 控制旋转上下的空3d对象
+  // 注：胶囊 - 空对象 - 相机，上下旋转只控制空对象，不会影响物体
+  const capsuleBodyControl = new THREE.Object3D();
+  capsuleBodyControl.add(camera);
+  capsuleBodyControl.add(backCamera);
+  capsule.add(capsuleBodyControl);
+  capsule.add(capsuleBody);
+
   scene.add(capsule);
 
   // 设置重力加速度 -- 竖直方向
@@ -142,6 +198,7 @@ onMounted(() => {
   let playerIsOnFloor = false;
 
   // 每一帧都需要更新玩家的状态 -- 延迟时间
+  // 玩家在地面上时还需要给物体增加摩擦力
   function updatePlayer(deltaTime) {
     let damping = -0.05;
     if (playerIsOnFloor) {
@@ -212,12 +269,25 @@ onMounted(() => {
     (event) => {
       keyStates[event.code] = false;
       keyStates.isDown = false;
+      if (event.code === "KeyV") {
+        activeCamera = activeCamera === camera ? backCamera : camera;
+      }
+    },
+    false
+  );
+
+  document.addEventListener(
+    "mousedown",
+    (event) => {
+      // 锁定鼠标指针
+      document.body.requestPointerLock();
     },
     false
   );
 
   // 根据键盘状态更新玩家的速度
   function controlPlayer(deltaTime) {
+    // 前进
     if (keyStates["KeyW"]) {
       playerDirection.z = 1;
       // 获取胶囊的正前面方向
@@ -227,7 +297,89 @@ onMounted(() => {
       // 计算玩家的速度
       playerVelocity.add(capsuleFront.multiplyScalar(deltaTime));
     }
+
+    // 后退
+    if (keyStates["KeyS"]) {
+      playerDirection.z = 1;
+      const capsuleFront = new THREE.Vector3(0, 0, 0);
+      capsule.getWorldDirection(capsuleFront);
+      playerVelocity.add(capsuleFront.multiplyScalar(-deltaTime));
+    }
+
+    // 左右侧向
+    if (keyStates["KeyA"]) {
+      playerDirection.x = 1;
+      // 获取胶囊的正前面方向
+      const capsuleFront = new THREE.Vector3(0, 0, 0);
+      capsule.getWorldDirection(capsuleFront);
+      // 侧方的方向，正前面的方向和胶囊的正上方求叉积，求出侧方的方向
+      capsuleFront.cross(capsule.up);
+      // 计算玩家的速度
+      playerVelocity.add(capsuleFront.multiplyScalar(-deltaTime));
+    }
+
+    if (keyStates["KeyD"]) {
+      playerDirection.x = 1;
+      // 获取胶囊的正前面方向
+      const capsuleFront = new THREE.Vector3(0, 0, 0);
+      capsule.getWorldDirection(capsuleFront);
+      // 侧方的方向，正前面的方向和胶囊的正上方求叉积，求出侧方的方向
+      capsuleFront.cross(capsule.up);
+      // 计算玩家的速度
+      playerVelocity.add(capsuleFront.multiplyScalar(deltaTime));
+    }
+
+    // 按空格键进行跳跃
+    if (keyStates["Space"]) {
+      playerVelocity.y = 10;
+    }
   }
+
+  // 根据鼠标在屏幕上的移动，来旋转胶囊
+
+  // window.addEventListener("mousemove", (event) => {
+  //   const mouseX = event.clientX;
+  //   const mouseY = event.clientY;
+  //   const mouseDeltaX = mouseX - window.innerWidth / 2;
+  //   const mouseDeltaY = mouseY - window.innerHeight / 2;
+  //   // capsule.rotation.y -= mouseDeltaX * 0.00001;
+  //   // 左右旋转
+  //   capsule.rotation.y -= mouseDeltaX * 0.00001;
+  // });
+
+  // movementX -- 根据movement旋转胶囊，移动距离越大，旋转角度越大
+  window.addEventListener(
+    "mousemove",
+    (event) => {
+      capsule.rotation.y -= event.movementX * 0.005;
+      capsuleBodyControl.rotation.x += event.movementY * 0.003;
+
+      // 设置旋转的阈值
+      if (capsuleBodyControl.rotation.x > Math.PI / 8) {
+        capsuleBodyControl.rotation.x = Math.PI / 8;
+      } else if (capsuleBodyControl.rotation.x < -Math.PI / 8) {
+        capsuleBodyControl.rotation.x = -Math.PI / 8;
+      }
+    },
+    false
+  );
+
+  // 多层次细节展示 LOD
+  // 提升了渲染性能，相机距离的远近决定了物体展示的精细程度
+  let lod = new THREE.LOD();
+  const lodMaterial = new THREE.MeshBasicMaterial({
+    color: 0xff0000,
+    wireframe: true,
+  });
+
+  for (let i = 0; i < 5; i++) {
+    const geometry = new THREE.SphereBufferGeometry(i, 22 - i * 5, 22 - i * 5);
+    const mesh = new THREE.Mesh(geometry, lodMaterial);
+    lod.addLevel(mesh, i * 5);
+  }
+
+  lod.position.set(10, 0, 10);
+  scene.add(lod);
 
   animate();
 });
