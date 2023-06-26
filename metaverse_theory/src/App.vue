@@ -150,6 +150,34 @@ onMounted(() => {
   const capsuleBody = new THREE.Mesh(capsuleBodyGeometry, capsuleBodyMaterial);
   capsuleBody.position.set(0, 0.5, 0);
 
+  // 添加半球光源 -- 白光
+  const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.5);
+  scene.add(hemisphereLight);
+
+  // 加载机器人模型
+  const loader = new GLTFLoader();
+  // 设置动作混合器
+  let mixer = null;
+  // 存放动作对象
+  let robotActions = {};
+  loader.load("./models/RobotExpressive.glb", (gltf) => {
+    const robot = gltf.scene;
+    robot.scale.set(0.5, 0.5, 0.5);
+    scene.add(robot);
+    mixer = new THREE.AnimationMixer(robot);
+    gltf.animations.forEach((v) => {
+      robotActions[v.name] = mixer.clipAction(v);
+      // 条件 -- 不是休闲，走路，跑步时
+      if (v.name !== "Idle" || v.name !== "Walking" || v.name !== "Running") {
+        // 动作完成时禁止，只循环一次
+        robotActions[v.name].clampWhenFinished = true;
+        robotActions[v.name].loop = THREE.LoopOnce;
+      }
+    });
+
+    console.log(robotActions);
+  });
+
   // 创建一个胶囊物体
   const capsuleGeometry = new THREE.CapsuleGeometry(0.35, 1, 32);
   const capsuleMaterial = new THREE.MeshBasicMaterial({
