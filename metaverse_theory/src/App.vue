@@ -90,6 +90,10 @@ onMounted(() => {
     resetPlayer();
     stats.update();
     // controls.update();
+    // 更新动作
+    if (mixer) {
+      mixer.update(delta);
+    }
     renderer.render(scene, activeCamera);
     requestAnimationFrame(animate);
   }
@@ -141,14 +145,14 @@ onMounted(() => {
   // console.log(playerCollider);
   // console.log(worldOctree);
 
-  // 创建一个平面
-  const capsuleBodyGeometry = new THREE.PlaneGeometry(1, 0.5, 1, 1);
-  const capsuleBodyMaterial = new THREE.MeshBasicMaterial({
-    color: 0x0000ff,
-    side: THREE.DoubleSide,
-  });
-  const capsuleBody = new THREE.Mesh(capsuleBodyGeometry, capsuleBodyMaterial);
-  capsuleBody.position.set(0, 0.5, 0);
+  // 创建一个平面 -- 隐藏掉胶囊的屏幕
+  // const capsuleBodyGeometry = new THREE.PlaneGeometry(1, 0.5, 1, 1);
+  // const capsuleBodyMaterial = new THREE.MeshBasicMaterial({
+  //   color: 0x0000ff,
+  //   side: THREE.DoubleSide,
+  // });
+  // const capsuleBody = new THREE.Mesh(capsuleBodyGeometry, capsuleBodyMaterial);
+  // capsuleBody.position.set(0, 0.5, 0);
 
   // 添加半球光源 -- 白光
   const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.5);
@@ -160,33 +164,45 @@ onMounted(() => {
   let mixer = null;
   // 存放动作对象
   let robotActions = {};
+  // 设置激活动作
+  let activeAction = null;
   loader.load("./models/RobotExpressive.glb", (gltf) => {
     const robot = gltf.scene;
-    robot.scale.set(0.5, 0.5, 0.5);
-    scene.add(robot);
+    robot.scale.set(0.4, 0.4, 0.4);
+    robot.position.set(0, -0.5, 0);
+    // 不是将robot直接添加到scene中，而是将robot添加到胶囊空对象上，作为子元素
+    // scene.add(robot);
+    capsule.add(robot);
     mixer = new THREE.AnimationMixer(robot);
     gltf.animations.forEach((v) => {
       robotActions[v.name] = mixer.clipAction(v);
-      // 条件 -- 不是休闲，走路，跑步时
-      if (v.name !== "Idle" || v.name !== "Walking" || v.name !== "Running") {
-        // 动作完成时禁止，只循环一次
+      // 条件 -- 是休闲，走路，跑步时 -- 设置为循环
+      if (v.name == "Idle" || v.name == "Walking" || v.name == "Running") {
+        robotActions[v.name].clampWhenFinished = false;
+        robotActions[v.name].loop = THREE.LoopRepeat;
+      } else {
+        // 动作完成时禁止，只循环一次 -- 动画将在最后一帧之后自动暂停
         robotActions[v.name].clampWhenFinished = true;
         robotActions[v.name].loop = THREE.LoopOnce;
       }
     });
+    // 休闲的时候四处张望
+    activeAction = robotActions["Idle"];
+    activeAction.play();
 
-    console.log(robotActions);
+    // console.log(robotActions);
   });
 
   // 创建一个胶囊物体
-  const capsuleGeometry = new THREE.CapsuleGeometry(0.35, 1, 32);
-  const capsuleMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffff00,
-    side: THREE.DoubleSide,
-  });
+  // const capsuleGeometry = new THREE.CapsuleGeometry(0.35, 1, 32);
+  // const capsuleMaterial = new THREE.MeshBasicMaterial({
+  // color: 0xffff00,
+  // side: THREE.DoubleSide,
+  // });
+  // const capsule = new THREE.Mesh(capsuleGeometry, capsuleMaterial);
 
-  const capsule = new THREE.Mesh(capsuleGeometry, capsuleMaterial);
-  capsule.position.set(0, 0.85, 0);
+  const capsule = new THREE.Object3D();
+  capsule.position.set(0, 0.5, 0);
 
   // 将相机作为胶囊的子元素，就可以实现跟随
   camera.position.set(0, 2, -5);
@@ -202,7 +218,7 @@ onMounted(() => {
   capsuleBodyControl.add(camera);
   capsuleBodyControl.add(backCamera);
   capsule.add(capsuleBodyControl);
-  capsule.add(capsuleBody);
+  // capsule.add(capsuleBody);
 
   scene.add(capsule);
 
